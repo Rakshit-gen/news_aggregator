@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>News GraphQL Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .article { margin-bottom: 18px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+    img { max-width: 200px; display:block; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h1>Top Headlines (location-aware)</h1>
+  <div id="status">Detecting country...</div>
+  <div id="articles"></div>
+
+<script>
+async function getCountryCode() {
+  // Use a public IP geolocation service. Replace if you have another.
+  try {
+    const res = await fetch('https://ipapi.co/json/');
+    if (!res.ok) throw new Error('ipapi failed');
+    const data = await res.json();
+    // data.country is ISO code like "US", "IN"
+    return (data.country || '').toLowerCase();
+  } catch (e) {
+    console.warn('ip lookup failed', e);
+    return '';
+  }
+}
+
+async function fetchHeadlines(country) {
+  const query = `
+    query Top($country:String,$pageSize:Int) {
+      topHeadlines(country:$country,pageSize:$pageSize) {
+        source title description url urlToImage publishedAt
+      }
+    }
+  `;
+  const variables = { country: country || null, pageSize: 15 };
+
+  const res = await fetch('/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables })
+  });
+  return res.json();
+}
+
+(async function main(){
+  const statusEl = document.getElementById('status');
+  const articlesEl = document.getElementById('articles');
+
+  const country = await getCountryCode();
+  statusEl.textContent = country ? `Detected country: ${country.toUpperCase()}` : 'No country detected. Showing global top headlines.';
+
+  try {
+    const json = await fetchHeadlines(country);
+    if (json.errors) {
+      statusEl.textContent = 'GraphQL error: ' + JSON.stringify(json.errors);
+      return;
+    }
+    const articles = json.data.topHeadlines;
+    if (!articles || articles.length === 0) {
+      articlesEl.innerHTML = '<p>No articles found.</p>';
+      return;
+    }
+    articlesEl.innerHTML = '';
+    for (const a of articles) {
+      const div = document.createElement('div');
+      div.className = 'article';
+      div.innerHTML = `<strong>${a.title}</strong>
+        <div>${a.source} — <small>${new Date(a.publishedAt).toLocaleString()}</small></div>
+        <p>${a.description || ''}</p>
+        <a href="${a.url}" target="_blank">Read</a>
+        ${a.urlToImage ? `<img src="${a.urlToImage}" alt="thumb" />` : ''}`;
+      articlesEl.appendChild(div);
+    }
+  } catch (e) {
+    statusEl.textContent = 'Fetch error: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
